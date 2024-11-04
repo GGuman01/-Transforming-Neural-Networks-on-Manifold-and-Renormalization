@@ -1,0 +1,101 @@
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, random_split, TensorDataset
+from sklearn.datasets import make_swiss_roll
+from sklearn.preprocessing import StandardScaler
+
+# Generate and preprocess Swiss Roll dataset
+def generate_swiss_roll_dataset(n_samples=2000, noise=0.1):
+    data, _ = make_swiss_roll(n_samples=n_samples, noise=noise)
+    data = StandardScaler().fit_transform(data)
+    targets = (data[:, 0] > 0).astype(int)  # Binary classification based on 'x' value
+    return torch.tensor(data, dtype=torch.float32), torch.tensor(targets, dtype=torch.float32).unsqueeze(1)
+
+# Convert data to PyTorch tensors
+X, y = generate_swiss_roll_dataset()
+
+# Split dataset into training and validation sets
+train_size = int(0.8 * len(X))
+val_size = len(X) - train_size
+train_dataset, val_dataset = random_split(TensorDataset(X, y), [train_size, val_size])
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
+
+# Define the standard FCNN
+class StandardFCNN(nn.Module):
+    def __init__(self):
+        super(StandardFCNN, self).__init__()
+        self.layer1 = nn.Linear(3, 512)
+        self.layer2 = nn.Linear(512, 128)
+        self.output_layer = nn.Linear(128, 1)
+        self.activation = nn.ReLU()
+
+    def forward(self, x):
+        x = self.activation(self.layer1(x))
+        x = self.activation(self.layer2(x))
+        x = torch.sigmoid(self.output_layer(x))
+        return x
+
+# Define the enhanced FCNN with manifold regularization
+class EnhancedFCNN(nn.Module):
+    def __init__(self):
+        super(EnhancedFCNN, self).__init__()
+        self.layer1 = nn.Linear(3, 512)
+        self.layer2 = nn.Linear(512, 128)
+        self.output_layer = nn.Linear(128, 1)
+        self.activation = nn.ReLU()
+
+    def forward(self, x):
+        x = self.activation(self.layer1(x))
+        x = self.manifold_layer(x)
+        x = self.activation(self.layer2(x))
+        x = torch.sigmoid(self.output_layer(x))
+        return x
+    
+    def manifold_layer(self, x):
+        # Incorporate Christoffel symbols to model manifold curvature
+        christoffel_term = self.compute_christoffel_symbols(x)
+        return x + christoffel_term
+
+    def compute_christoffel_symbols(self, x):
+        # Placeholder computation for Christoffel symbols, replace with actual logic as needed
+        return torch.mean(x, dim=1, keepdim=True)
+
+# Training function
+def train_model(model, train_loader, val_loader, num_epochs=20):
+    criterion = nn.BCELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    for epoch in range(num_epochs):
+        model.train()
+        train_loss = 0
+        for batch_X, batch_y in train_loader:
+            optimizer.zero_grad()
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+
+        val_loss = 0
+        model.eval()
+        with torch.no_grad():
+            for val_X, val_y in val_loader:
+                val_outputs = model(val_X)
+                val_loss += criterion(val_outputs, val_y).item()
+
+        train_loss /= len(train_loader)
+        val_loss /= len(val_loader)
+        print(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {train_loss:.4f}, Validation Loss: {val_loss:.4f}")
+
+# Instantiate and train the standard FCNN
+standard_model = StandardFCNN()
+print("Training Standard FCNN")
+train_model(standard_model, train_loader, val_loader)
+
+# Instantiate and train the enhanced FCNN with manifold regularization
+enhanced_model = EnhancedFCNN()
+print("\nTraining Enhanced FCNN with Manifold Regularization")
+train_model(enhanced_model, train_loader, val_loader)
